@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 from typing import Dict, NamedTuple, Optional
 
 from freqtrade.constants import UNLIMITED_STAKE_AMOUNT, Config, IntOrInf
-from freqtrade.enums import RunMode, TradingMode
+from freqtrade.enums import RunMode, TradingMode, MarginMode
 from freqtrade.exceptions import DependencyException
 from freqtrade.exchange import Exchange
 from freqtrade.misc import safe_value_fallback
@@ -45,12 +45,28 @@ class Wallets:
         self._last_wallet_refresh: Optional[datetime] = None
         self.update()
 
-    def get_free(self, currency: str) -> float:
+    def get_free(self, currency: str = None) -> float:
+        """
+        @param currency: Usually stake currency, but could be BNFCR for binance cross futures.
+        This method will determine the correct currency to use if not provided.
+        @return: Free amount in the currency provided, or if None, the currency used for trading.
+        """
+        if currency is None:
+            # For dry run, we will run as if we are trading with the stake currency
+            if self.is_binance_cross_futures() and not self._config['dry_run']:
+                currency = "BNFCR"
+            else:
+                currency = self._config["stake_currency"]
         balance = self._wallets.get(currency)
         if balance and balance.free:
             return balance.free
         else:
             return 0
+
+    def is_binance_cross_futures(self) -> bool:
+        return (self._config["exchange"]["name"] == 'binance' and
+                self._config["trading_mode"] == TradingMode.FUTURES and
+                self._config["margin_mode"] == MarginMode.CROSS)
 
     def get_used(self, currency: str) -> float:
         balance = self._wallets.get(currency)
@@ -99,21 +115,11 @@ class Wallets:
         used_stake = 0.0
 
         if self._config.get("trading_mode", "spot") != TradingMode.FUTURES:
+            current_stake = self.start_cap + tot_profit - tot_in_trades
+            total_stake = current_stake
             for trade in open_trades:
                 curr = self._exchange.get_pair_base_currency(trade.pair)
-                used_stake += sum(
-                    o.stake_amount for o in trade.open_orders if o.ft_order_side == trade.entry_side
-                )
-                pending = sum(
-                    o.amount
-                    for o in trade.open_orders
-                    if o.amount and o.ft_order_side == trade.exit_side
-                )
-
-                _wallets[curr] = Wallet(curr, trade.amount - pending, pending, trade.amount)
-
-            current_stake = self.start_cap + tot_profit - tot_in_trades
-            total_stake = current_stake + used_stake
+                _wallets[curr] = Wallet(curr, trade.amount, 0, trade.amount)
         else:
             tot_in_trades = 0
             for position in open_trades:
@@ -264,9 +270,7 @@ class Wallets:
             # Ensure <tradable_balance_ratio>% is used from the overall balance
             # Otherwise we'd risk lowering stakes with each open trade.
             # (tied up + current free) * ratio) - tied up
-            available_amount = (
-                val_tied_up + self.get_free(self._config["stake_currency"])
-            ) * self._config["tradable_balance_ratio"]
+            available_amount = (val_tied_up + self.get_free()) * self._config["tradable_balance_ratio"]
         return available_amount
 
     def get_available_stake_amount(self) -> float:
@@ -277,8 +281,7 @@ class Wallets:
         (<open_trade stakes> + free amount) * tradable_balance_ratio - <open_trade stakes>
         """
 
-        free = self.get_free(self._config["stake_currency"])
-        return min(self.get_total_stake_amount() - Trade.total_open_trades_stakes(), free)
+        return min(self.get_total_stake_amount() - Trade.total_open_trades_stakes(), self.get_free())
 
     def _calculate_unlimited_stake_amount(
         self, available_amount: float, val_tied_up: float, max_open_trades: IntOrInf

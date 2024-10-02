@@ -73,18 +73,11 @@ class Binance(Exchange):
             if self.trading_mode == TradingMode.FUTURES and not self._config["dry_run"]:
                 position_side = self._api.fapiPrivateGetPositionSideDual()
                 self._log_exchange_response("position_side_setting", position_side)
-                assets_margin = self._api.fapiPrivateGetMultiAssetsMargin()
-                self._log_exchange_response("multi_asset_margin", assets_margin)
                 msg = ""
                 if position_side.get("dualSidePosition") is True:
                     msg += (
                         "\nHedge Mode is not supported by freqtrade. "
                         "Please change 'Position Mode' on your binance futures account."
-                    )
-                if assets_margin.get("multiAssetsMargin") is True:
-                    msg += (
-                        "\nMulti-Asset Mode is not supported by freqtrade. "
-                        "Please change 'Asset Mode' on your binance futures account."
                     )
                 if msg:
                     raise OperationalException(msg)

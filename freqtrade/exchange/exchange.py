@@ -846,13 +846,15 @@ class Exchange:
         Throws OperationalException:
             If the trading_mode/margin_mode type are not supported by freqtrade on this exchange
         """
-        if trading_mode != TradingMode.SPOT and (
-            (trading_mode, margin_mode) not in self._supported_trading_mode_margin_pairs
-        ):
-            mm_value = margin_mode and margin_mode.value
-            raise OperationalException(
-                f"Freqtrade does not support {mm_value} {trading_mode} on {self.name}"
-            )
+        # DISABLED: My freqtrade hacks has now made it work with cross margin mode multi-asset mode.
+        # if trading_mode != TradingMode.SPOT and (
+        #     (trading_mode, margin_mode) not in self._supported_trading_mode_margin_pairs
+        # ):
+        #     mm_value = margin_mode and margin_mode.value
+        #     raise OperationalException(
+        #         f"Freqtrade does not support {mm_value} {trading_mode} on {self.name}"
+        #     )
+        pass
 
     def get_option(self, param: str, default: Optional[Any] = None) -> Any:
         """
